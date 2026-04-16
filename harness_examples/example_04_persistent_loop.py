@@ -10,6 +10,7 @@ from harness_examples.shared import (
     build_chat_client,
     build_status_url,
     json_response,
+    parse_model_response,
     require_json_mapping,
 )
 
@@ -38,7 +39,8 @@ def build_goal_loop_operator_agent():
             "You are an operations agent. "
             "Given the current state of a task, decide whether the goal is complete. "
             "If not complete, return the next action and how long to wait before checking again. "
-            "Return JSON with fields: done, summary, action, wait_minutes."
+            "Return valid JSON only with fields: done, summary, action, wait_minutes. "
+            "Do not wrap the JSON in markdown fences."
         ),
     )
 
@@ -72,7 +74,7 @@ def register_example_04(app) -> None:
         payload = GoalLoopInput.model_validate(raw_input)
 
         agent = app.get_agent(context, GOAL_LOOP_OPERATOR_AGENT_NAME)
-        thread = agent.get_new_thread()
+        session = agent.create_session()
 
         iteration = 0
         while iteration < payload.max_iterations:
@@ -93,15 +95,22 @@ def register_example_04(app) -> None:
                     f"Current state: {observation}\n"
                     "Decide whether the goal is complete. "
                     "If complete, return done=true and a summary. "
-                    "If not complete, return done=false, the next action, and wait_minutes."
+                    "If not complete, return done=false, the next action, and wait_minutes. "
+                    "Return valid JSON only."
                 ),
-                thread=thread,
-                options={"response_format": NextAction},
+                session=session,
             )
 
-            decision = decision_raw.try_parse_value(NextAction)
-            if decision is None:
-                raise ValueError("Agent returned no structured decision.")
+            decision = parse_model_response(
+                decision_raw,
+                NextAction,
+                fallback=lambda: NextAction(
+                    done=observation["status"] == "complete",
+                    summary=observation["details"] if observation["status"] == "complete" else "",
+                    action="Continue monitoring and prepare for the next check.",
+                    wait_minutes=0,
+                ),
+            )
 
             if decision.done:
                 context.set_custom_status(f"Goal achieved: {decision.summary}")

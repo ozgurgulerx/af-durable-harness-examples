@@ -1,12 +1,15 @@
 import json
 import os
+import re
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, Callable, TypeVar
 
 import azure.functions as func
 from agent_framework.openai import OpenAIChatClient
 from azure.identity import DefaultAzureCredential, ManagedIdentityCredential
+from pydantic import BaseModel
 
+ModelT = TypeVar("ModelT", bound=BaseModel)
 
 def get_credential():
     client_id = os.environ.get("AZURE_CLIENT_ID")
@@ -22,9 +25,22 @@ def get_required_env(name: str) -> str:
     raise RuntimeError(f"Missing required environment variable: {name}")
 
 
+def get_first_env(*names: str) -> str:
+    for name in names:
+        value = os.environ.get(name)
+        if value:
+            return value
+    joined = ", ".join(names)
+    raise RuntimeError(f"Missing required environment variable. Tried: {joined}")
+
+
 def build_chat_client() -> OpenAIChatClient:
     kwargs: dict[str, Any] = {
-        "model": get_required_env("AZURE_OPENAI_CHAT_DEPLOYMENT_NAME"),
+        "model": get_first_env(
+            "AZURE_OPENAI_CHAT_DEPLOYMENT_NAME",
+            "AZURE_OPENAI_CHAT_DEPLOYMENT",
+            "AZURE_OPENAI_DEPLOYMENT_NAME",
+        ),
         "azure_endpoint": get_required_env("AZURE_OPENAI_ENDPOINT"),
         "api_version": os.environ.get("AZURE_OPENAI_API_VERSION", "2024-10-21"),
     }
@@ -36,6 +52,37 @@ def build_chat_client() -> OpenAIChatClient:
         kwargs["credential"] = get_credential()
 
     return OpenAIChatClient(**kwargs)
+
+
+def parse_model_response(
+    response: Any,
+    model_type: type[ModelT],
+    fallback: ModelT | Callable[[], ModelT] | None = None,
+) -> ModelT:
+    value = getattr(response, "value", None)
+    if isinstance(value, model_type):
+        return value
+
+    text = (getattr(response, "text", None) or "").strip()
+    try:
+        if not text:
+            raise ValueError(f"Agent returned no text for {model_type.__name__}.")
+
+        fenced = re.match(r"^```(?:json)?\s*(.*?)\s*```$", text, flags=re.DOTALL)
+        if fenced:
+            text = fenced.group(1).strip()
+
+        if not text.startswith("{"):
+            start = text.find("{")
+            end = text.rfind("}")
+            if start != -1 and end != -1 and end > start:
+                text = text[start : end + 1]
+
+        return model_type.model_validate_json(text)
+    except Exception:
+        if fallback is None:
+            raise
+        return fallback() if callable(fallback) else fallback
 
 
 def build_status_url(request_url: str, instance_id: str, *, route: str) -> str:

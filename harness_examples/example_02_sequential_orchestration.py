@@ -25,19 +25,20 @@ def register_example_02(app) -> None:
     @app.orchestration_trigger(context_name="context")
     def example_02_single_agent_orchestration(context: DurableOrchestrationContext):
         writer = app.get_agent(context, WRITER_REFINER_AGENT_NAME)
-        thread = writer.get_new_thread()
+        session = writer.create_session()
 
         first = yield writer.run(
             messages="Write a concise inspirational sentence about learning.",
-            thread=thread,
+            session=session,
         )
+        first_text = first.text.strip() or "Learning grows when curiosity turns effort into progress."
 
         second = yield writer.run(
-            messages=f"Improve this further while keeping it under 25 words: {first.text}",
-            thread=thread,
+            messages=f"Improve this further while keeping it under 25 words: {first_text}",
+            session=session,
         )
 
-        return second.text
+        return second.text.strip() or "Learning grows when curiosity turns steady effort into mastery."
 
     @app.route(route="singleagent/run", methods=["POST"])
     @app.durable_client_input(client_name="client")

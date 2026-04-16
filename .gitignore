@@ -1,9 +1,11 @@
 .venv/
+.local-tools/
 __pycache__/
 .pytest_cache/
 .python-version
+.env
+.azurite/
 local.settings.json
 *.pyc
 *.pyo
 *.pyd
-

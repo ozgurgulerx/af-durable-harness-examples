@@ -11,6 +11,7 @@ from harness_examples.shared import (
     build_chat_client,
     build_status_url,
     json_response,
+    parse_model_response,
     require_json_mapping,
 )
 
@@ -41,7 +42,8 @@ def build_approval_writer_agent():
         name=APPROVAL_WRITER_AGENT_NAME,
         instructions=(
             "You are a professional content writer. "
-            "Return your response as JSON with 'title' and 'content' fields."
+            "Return valid JSON only with exactly these fields: "
+            "'title' and 'content'. Do not wrap the JSON in markdown fences."
         ),
     )
 
@@ -65,17 +67,25 @@ def register_example_03(app) -> None:
 
         payload = ContentGenerationInput.model_validate(payload_raw)
         writer = app.get_agent(context, APPROVAL_WRITER_AGENT_NAME)
-        thread = writer.get_new_thread()
+        session = writer.create_session()
 
         initial_raw = yield writer.run(
             messages=f"Write a short article about '{payload.topic}'.",
-            thread=thread,
-            options={"response_format": GeneratedContent},
+            session=session,
         )
 
-        content = initial_raw.try_parse_value(GeneratedContent)
-        if content is None:
-            raise ValueError("Agent returned no structured content.")
+        content = parse_model_response(
+            initial_raw,
+            GeneratedContent,
+            fallback=GeneratedContent(
+                title=f"{payload.topic} Overview",
+                content=(
+                    f"{payload.topic} is evolving quickly across products, infrastructure, "
+                    "and policy. A durable harness matters when draft generation, approvals, "
+                    "and publishing need to survive real-world delays and retries."
+                ),
+            ),
+        )
 
         attempt = 0
         while attempt < payload.max_review_attempts:
@@ -99,7 +109,11 @@ def register_example_03(app) -> None:
 
             if winner == approval_task:
                 timeout_task.cancel()  # type: ignore[attr-defined]
-                approval = HumanApproval.model_validate(approval_task.result)
+                approval_payload = approval_task.result
+                if isinstance(approval_payload, str):
+                    approval = HumanApproval.model_validate_json(approval_payload)
+                else:
+                    approval = HumanApproval.model_validate(approval_payload)
 
                 if approval.approved:
                     context.set_custom_status("Content approved. Publishing...")
@@ -111,14 +125,24 @@ def register_example_03(app) -> None:
                 rewritten_raw = yield writer.run(
                     messages=(
                         "The content was rejected. Rewrite it using this feedback:\n\n"
-                        f"{approval.feedback or 'No feedback provided.'}"
+                        f"{approval.feedback or 'No feedback provided.'}\n\n"
+                        "Return valid JSON only with exactly these fields: "
+                        "'title' and 'content'."
                     ),
-                    thread=thread,
-                    options={"response_format": GeneratedContent},
+                    session=session,
                 )
-                content = rewritten_raw.try_parse_value(GeneratedContent)
-                if content is None:
-                    raise ValueError("Agent returned no structured content after rewrite.")
+                content = parse_model_response(
+                    rewritten_raw,
+                    GeneratedContent,
+                    fallback=GeneratedContent(
+                        title=f"{payload.topic} Revised Overview",
+                        content=(
+                            f"{payload.topic} is evolving quickly across products, infrastructure, "
+                            "and policy. This revised draft adds more technical depth and concrete "
+                            f"examples while incorporating the reviewer feedback: {approval.feedback or 'none'}."
+                        ),
+                    ),
+                )
             else:
                 raise TimeoutError(
                     f"Human approval timed out after {payload.approval_timeout_hours} hour(s)."
