@@ -4,7 +4,7 @@
 GET {{baseUrl}}/api/health
 
 ### Example 01
-POST {{baseUrl}}/api/agents/Joker/run
+POST {{baseUrl}}/api/agents/joker/run
 Content-Type: application/json
 
 {
@@ -35,4 +35,3 @@ Content-Type: application/json
   "max_iterations": 6,
   "poll_interval_minutes": 1
 }
-

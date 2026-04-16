@@ -60,10 +60,54 @@ func start
 
 ## Example 01 - Single durable agent
 
+The repo keeps all four examples in one Function App. The Example 01 part is intentionally this small:
+
+```python
+import os
+import azure.functions as func
+
+from agent_framework.azure import AgentFunctionApp
+from agent_framework.openai import OpenAIChatClient
+from azure.identity import DefaultAzureCredential, ManagedIdentityCredential
+
+def create_joker_agent():
+    client_id = os.getenv("AZURE_CLIENT_ID")
+    credential = (
+        ManagedIdentityCredential(client_id=client_id)
+        if client_id
+        else DefaultAzureCredential()
+    )
+
+    return OpenAIChatClient(
+        model=os.getenv("AZURE_OPENAI_CHAT_DEPLOYMENT_NAME"),
+        azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
+        api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-10-21"),
+        credential=credential,
+    ).as_agent(
+        name="Joker",
+        instructions="You are good at telling jokes.",
+    )
+
+app = AgentFunctionApp(
+    agents=[create_joker_agent()],
+    http_auth_level=func.AuthLevel.FUNCTION,
+    enable_health_check=True,
+    max_poll_retries=50,
+)
+```
+
+For brevity, this snippet shows the Entra ID / managed identity path. The repo code also supports `AZURE_OPENAI_API_KEY`.
+
+This is still the same Agent Framework mental model: define an agent, give it instructions, host it. What changes is the runtime contract around it.
+
 Request:
 
 ```http
-POST http://localhost:7071/api/agents/Joker/run
+GET http://localhost:7071/api/health
+```
+
+```http
+POST http://localhost:7071/api/agents/joker/run
 Content-Type: application/json
 
 {
@@ -73,12 +117,28 @@ Content-Type: application/json
 }
 ```
 
-Benefit highlighted:
+A typical response from the built-in durable agent route currently looks like this:
+
+```json
+{
+  "response": "",
+  "message": "Tell me a short joke about cloud reliability.",
+  "thread_id": "thread-001",
+  "status": "success",
+  "correlation_id": "<guid>",
+  "message_count": 2
+}
+```
+
+The important point is not the exact joke payload. The model is still probabilistic. Durable Extensions do not make the model deterministic. They make the execution governable.
+
+What gets bounded here:
 
 - Built-in HTTP hosting surface
 - Durable thread identity
-- Accepted/background execution semantics
+- Hosted request lifecycle with correlation
 - Health endpoint at `GET /api/health`
+- State managed by the durable host instead of ad hoc application plumbing
 
 ## Example 02 - Durable sequential orchestration
 
