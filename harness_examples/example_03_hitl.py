@@ -1,3 +1,5 @@
+"""Blog Example 03: human approval, durable waiting, and resume."""
+
 import logging
 from collections.abc import Mapping
 from datetime import timedelta

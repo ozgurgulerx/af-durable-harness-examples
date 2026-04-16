@@ -16,6 +16,9 @@ Content-Type: application/json
 ### Example 02 - Start
 POST {{baseUrl}}/api/singleagent/run
 
+### Example 02 - Status
+GET {{baseUrl}}/api/singleagent/status/<instanceId>
+
 ### Example 03 - Start
 POST {{baseUrl}}/api/hitl/run
 Content-Type: application/json
@@ -26,6 +29,18 @@ Content-Type: application/json
   "approval_timeout_hours": 24
 }
 
+### Example 03 - Approve
+POST {{baseUrl}}/api/hitl/approve/<instanceId>
+Content-Type: application/json
+
+{
+  "approved": false,
+  "feedback": "Please add more examples and technical depth."
+}
+
+### Example 03 - Status
+GET {{baseUrl}}/api/hitl/status/<instanceId>
+
 ### Example 04 - Start
 POST {{baseUrl}}/api/goal-loop/run
 Content-Type: application/json
@@ -35,3 +50,6 @@ Content-Type: application/json
   "max_iterations": 6,
   "poll_interval_minutes": 1
 }
+
+### Example 04 - Status
+GET {{baseUrl}}/api/goal-loop/status/<instanceId>

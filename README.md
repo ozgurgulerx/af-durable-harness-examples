@@ -2,6 +2,8 @@
 
 This repo packages the four examples from the blog post into a single runnable Azure Functions project using Microsoft Agent Framework plus Durable Extensions.
 
+The blog presents each example as a small standalone app to keep the concepts clear. This repo combines all four examples into one runnable Function App. The durable behaviors are the same, but some internal agent names are unique in code so the examples can coexist in one host.
+
 The examples focus on the harness layer around probabilistic agents:
 
 1. `Example 01` - Durable hosting surface for a single agent
@@ -142,6 +144,46 @@ What gets bounded here:
 
 ## Example 02 - Durable sequential orchestration
 
+Simplified shape from the blog:
+
+```python
+WRITER_AGENT_NAME = "WriterAgent"
+
+def create_writer_agent():
+    return OpenAIChatClient(...).as_agent(
+        name=WRITER_AGENT_NAME,
+        instructions=(
+            "You refine short pieces of text. "
+            "When given an initial sentence you enhance it; "
+            "when given an improved sentence you polish it further."
+        ),
+    )
+
+app = AgentFunctionApp(
+    agents=[create_writer_agent()],
+    enable_health_check=True,
+)
+
+@app.orchestration_trigger(context_name="context")
+def single_agent_orchestration(context):
+    writer = app.get_agent(context, WRITER_AGENT_NAME)
+    session = writer.create_session()
+
+    first = yield writer.run(
+        messages="Write a concise inspirational sentence about learning.",
+        session=session,
+    )
+
+    second = yield writer.run(
+        messages=f"Improve this further while keeping it under 25 words: {first.text}",
+        session=session,
+    )
+
+    return second.text
+```
+
+Runtime surface:
+
 Start:
 
 ```http
@@ -154,14 +196,53 @@ Status:
 GET http://localhost:7071/api/singleagent/status/<instanceId>
 ```
 
-Benefit highlighted:
+What Durable Extensions add here:
 
 - Durable progression across steps
-- Shared agent thread across steps
+- Shared agent session across steps
 - Instance identity and queryable status
 - Restart-safe continuation
 
+In other words, Agent Framework gives you the workflow logic. Durable Extensions give that workflow a durable runtime object with tracked step boundaries, status by `instanceId`, and recovery after restarts.
+
 ## Example 03 - Human-in-the-loop orchestration
+
+Simplified shape from the blog:
+
+```python
+WRITER_AGENT_NAME = "WriterAgent"
+HUMAN_APPROVAL_EVENT = "HumanApproval"
+
+class ContentGenerationInput(BaseModel): ...
+class GeneratedContent(BaseModel): ...
+class HumanApproval(BaseModel): ...
+
+def create_writer_agent():
+    return OpenAIChatClient(...).as_agent(...)
+
+app = AgentFunctionApp(
+    agents=[create_writer_agent()],
+    enable_health_check=True,
+)
+
+@app.activity_trigger(input_name="content")
+def notify_user_for_approval(content: dict) -> None:
+    ...
+
+@app.activity_trigger(input_name="content")
+def publish_content(content: dict) -> None:
+    ...
+
+@app.orchestration_trigger(context_name="context")
+def content_generation_hitl_orchestration(context):
+    ...
+    approval_task = context.wait_for_external_event(HUMAN_APPROVAL_EVENT)
+    timeout_task = context.create_timer(...)
+    winner = yield context.task_any([approval_task, timeout_task])
+    ...
+```
+
+Runtime surface:
 
 Start:
 
@@ -194,14 +275,52 @@ Status:
 GET http://localhost:7071/api/hitl/status/<instanceId>
 ```
 
-Benefit highlighted:
+What Durable Extensions add here:
 
 - Durable suspension while waiting for a human
 - External event resume
 - Timeout handling as part of the workflow
 - Persisted review loop state
 
+This is the clearest example of the harness governing a human-gated process. Waiting becomes durable state, approval becomes an external re-entry event, timeouts become part of the workflow contract, and the orchestration can survive long delays and host restarts.
+
 ## Example 04 - Persistent goal loop
+
+Simplified shape from the blog:
+
+```python
+GOAL_LOOP_AGENT_NAME = "GoalLoopAgent"
+
+class GoalLoopInput(BaseModel): ...
+class NextAction(BaseModel): ...
+
+def create_goal_loop_agent():
+    return OpenAIChatClient(...).as_agent(...)
+
+app = AgentFunctionApp(
+    agents=[create_goal_loop_agent()],
+    enable_health_check=True,
+)
+
+@app.activity_trigger(input_name="payload")
+def observe_external_state(payload: dict) -> dict:
+    ...
+
+@app.activity_trigger(input_name="payload")
+def execute_next_action(payload: dict) -> dict:
+    ...
+
+@app.orchestration_trigger(context_name="context")
+def persistent_goal_loop(context):
+    ...
+    while iteration < payload.max_iterations:
+        observation = yield context.call_activity(...)
+        decision_raw = yield agent.run(...)
+        yield context.call_activity(...)
+        yield context.create_timer(...)
+```
+
+Runtime surface:
 
 Start:
 
@@ -222,12 +341,14 @@ Status:
 GET http://localhost:7071/api/goal-loop/status/<instanceId>
 ```
 
-Benefit highlighted:
+What Durable Extensions add here:
 
 - Durable observe-decide-act loops
 - Timer-backed waiting without pinned compute
 - Persisted iteration state
 - Bounded long-running autonomy
+
+Agent Framework can model the same loop logic. Durable Extensions make that loop durable as a runtime object: persisted iteration state, timer-driven waiting, restart-safe continuation, and status you can query from outside the process.
 
 ## Files
 

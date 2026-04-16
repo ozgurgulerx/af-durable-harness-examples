@@ -1,3 +1,5 @@
+"""Blog Example 02: durable sequential orchestration."""
+
 import logging
 
 import azure.functions as func

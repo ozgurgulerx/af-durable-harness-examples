@@ -1,3 +1,5 @@
+"""Blog Example 04: persistent agent loop with durable timers and status."""
+
 import logging
 from datetime import timedelta
 from typing import Any
