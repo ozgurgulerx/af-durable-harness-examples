@@ -1,0 +1,38 @@
+@baseUrl = http://localhost:7071
+
+### Health
+GET {{baseUrl}}/api/health
+
+### Example 01
+POST {{baseUrl}}/api/agents/Joker/run
+Content-Type: application/json
+
+{
+  "message": "Tell me a short joke about cloud reliability.",
+  "thread_id": "thread-001",
+  "wait_for_response": false
+}
+
+### Example 02 - Start
+POST {{baseUrl}}/api/singleagent/run
+
+### Example 03 - Start
+POST {{baseUrl}}/api/hitl/run
+Content-Type: application/json
+
+{
+  "topic": "The Future of Artificial Intelligence",
+  "max_review_attempts": 3,
+  "approval_timeout_hours": 24
+}
+
+### Example 04 - Start
+POST {{baseUrl}}/api/goal-loop/run
+Content-Type: application/json
+
+{
+  "goal": "Watch for the export job to complete and deliver the result",
+  "max_iterations": 6,
+  "poll_interval_minutes": 1
+}
+

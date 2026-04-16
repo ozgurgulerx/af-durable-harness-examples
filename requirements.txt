@@ -1,0 +1,5 @@
+agent-framework-azurefunctions
+agent-framework-durabletask>=0.0.2b260126
+agent-framework-openai>=1.0.1
+azure-identity
+pydantic
